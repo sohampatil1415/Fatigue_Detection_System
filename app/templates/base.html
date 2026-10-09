@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AI-Powered Driver Drowsiness Detection System — Real-time monitoring, EAR analysis, and safety alerts.">
+    <title>{% block title %}Dashboard{% endblock %} — DrowsiGuard AI</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar Overlay (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+    
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-brand-icon">
+                <i class="fas fa-shield-halved"></i>
+            </div>
+            <div class="sidebar-brand-text">
+                DrowsiGuard AI
+                <span>Detection System</span>
+            </div>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <div class="sidebar-section-title">Main Menu</div>
+            
+            <a href="/" class="sidebar-link {{ 'active' if active_page == 'dashboard' }}">
+                <i class="fas fa-gauge-high"></i>
+                <span>Dashboard</span>
+            </a>
+            
+            <a href="/detection" class="sidebar-link {{ 'active' if active_page == 'detection' }}">
+                <i class="fas fa-video"></i>
+                <span>Live Detection</span>
+                <span class="sidebar-badge" id="sidebarLiveBadge" style="display:none;">LIVE</span>
+            </a>
+            
+            <a href="/history" class="sidebar-link {{ 'active' if active_page == 'history' }}">
+                <i class="fas fa-clock-rotate-left"></i>
+                <span>Detection History</span>
+            </a>
+            
+            <a href="/analytics" class="sidebar-link {{ 'active' if active_page == 'analytics' }}">
+                <i class="fas fa-chart-line"></i>
+                <span>Analytics</span>
+            </a>
+            
+            <div class="sidebar-section-title">System</div>
+            
+            <a href="/settings" class="sidebar-link {{ 'active' if active_page == 'settings' }}">
+                <i class="fas fa-sliders"></i>
+                <span>Settings</span>
+            </a>
+            
+            <a href="/system-health" class="sidebar-link {{ 'active' if active_page == 'health' }}">
+                <i class="fas fa-heart-pulse"></i>
+                <span>System Health</span>
+            </a>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="sidebar-footer-status">
+                <div class="status-indicator"></div>
+                <span>System Online</span>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Navbar -->
+        <header class="top-navbar">
+            <div class="navbar-left">
+                <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h2 class="navbar-title">{% block navbar_title %}Dashboard{% endblock %}</h2>
+            </div>
+            <div class="navbar-right">
+                <button class="navbar-btn" onclick="location.reload()">
+                    <i class="fas fa-rotate-right"></i>
+                    <span>Refresh</span>
+                </button>
+                <button class="navbar-btn" id="exportCsvBtn" onclick="exportCSV()">
+                    <i class="fas fa-download"></i>
+                    <span>Export</span>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Page Content -->
+        <div class="page-content">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+    
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <!-- Global JS -->
+    <script>
+        /* Sidebar Toggle */
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+        }
+        
+        /* Toast Notifications */
+        function showToast(message, type = 'info', duration = 4000) {
+            const container = document.getElementById('toastContainer');
+            const icons = {
+                success: 'fa-circle-check', error: 'fa-circle-xmark',
+                warning: 'fa-triangle-exclamation', info: 'fa-circle-info'
+            };
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <i class="fas ${icons[type]} toast-icon"></i>
+                <span>${message}</span>
+                <button class="toast-close" onclick="this.parentElement.remove()"><i class="fas fa-xmark"></i></button>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'slideOutRight 0.4s ease forwards';
+                setTimeout(() => toast.remove(), 400);
+            }, duration);
+        }
+        
+        /* CSV Export */
+        function exportCSV() {
+            window.location.href = '/api/export/csv';
+            showToast('Exporting detection data as CSV...', 'success');
+        }
+        
+        /* PDF Export */
+        function exportPDF() {
+            window.location.href = '/api/export/pdf';
+            showToast('Generating PDF report...', 'success');
+        }
+        
+        /* Format Timestamp */
+        function formatTimestamp(ts) {
+            if (!ts) return '—';
+            const d = new Date(ts);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+                   d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

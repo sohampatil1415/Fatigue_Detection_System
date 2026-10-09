@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block navbar_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-gauge-high" style="color: var(--primary-hover); margin-right: 10px;"></i>Command Center</h1>
+    <p>Real-time overview of your driver drowsiness detection system performance and metrics.</p>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid">
+    <div class="stat-card card-primary">
+        <div class="stat-card-header">
+            <span class="stat-card-label">Total Sessions</span>
+            <div class="stat-card-icon"><i class="fas fa-layer-group"></i></div>
+        </div>
+        <div class="stat-card-value" id="statSessions">{{ stats.total_sessions }}</div>
+        <div class="stat-card-meta">
+            <i class="fas fa-clock"></i> All time monitoring sessions
+        </div>
+    </div>
+    
+    <div class="stat-card card-danger">
+        <div class="stat-card-header">
+            <span class="stat-card-label">Drowsy Alerts</span>
+            <div class="stat-card-icon"><i class="fas fa-bell"></i></div>
+        </div>
+        <div class="stat-card-value" id="statAlerts">{{ stats.total_alerts }}</div>
+        <div class="stat-card-meta">
+            <i class="fas fa-triangle-exclamation"></i> Total drowsiness incidents detected
+        </div>
+    </div>
+    
+    <div class="stat-card card-success">
+        <div class="stat-card-header">
+            <span class="stat-card-label">Total Blinks</span>
+            <div class="stat-card-icon"><i class="fas fa-eye"></i></div>
+        </div>
+        <div class="stat-card-value" id="statBlinks">{{ stats.total_blinks }}</div>
+        <div class="stat-card-meta">
+            <i class="fas fa-chart-simple"></i> Eye blinks tracked across all sessions
+        </div>
+    </div>
+    
+    <div class="stat-card card-warning">
+        <div class="stat-card-header">
+            <span class="stat-card-label">System Status</span>
+            <div class="stat-card-icon"><i class="fas fa-signal"></i></div>
+        </div>
+        <div class="stat-card-value" style="font-size: 22px; color: var(--accent-green);" id="statStatus">ONLINE</div>
+        <div class="stat-card-meta">
+            <span class="positive"><i class="fas fa-circle-check"></i></span> All systems operational
+        </div>
+    </div>
+</div>
+
+<!-- Two Column Layout -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <!-- Recent Alerts Panel -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-bell"></i> Recent Alerts</div>
+            <a href="/history" class="btn btn-outline btn-sm"><i class="fas fa-arrow-right"></i> View All</a>
+        </div>
+        <div class="panel-body-flush">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>EAR</th>
+                        <th>Level</th>
+                    </tr>
+                </thead>
+                <tbody id="recentAlertsBody">
+                    <tr>
+                        <td colspan="3">
+                            <div class="empty-state" style="padding: 30px;">
+                                <div class="empty-state-icon"><i class="fas fa-shield-check"></i></div>
+                                <div class="empty-state-title">No alerts yet</div>
+                                <div class="empty-state-desc">Start a detection session to see drowsiness alerts here.</div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Quick Actions Panel -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-bolt"></i> Quick Actions</div>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; gap: 14px;">
+                <a href="/detection" class="btn btn-primary btn-lg w-100" style="justify-content: flex-start;">
+                    <i class="fas fa-video"></i> Start Live Detection
+                </a>
+                <a href="/history" class="btn btn-outline btn-lg w-100" style="justify-content: flex-start;">
+                    <i class="fas fa-clock-rotate-left"></i> View Detection History
+                </a>
+                <a href="/analytics" class="btn btn-outline btn-lg w-100" style="justify-content: flex-start;">
+                    <i class="fas fa-chart-line"></i> View Analytics
+                </a>
+                <button class="btn btn-outline btn-lg w-100" onclick="exportCSV()" style="justify-content: flex-start;">
+                    <i class="fas fa-download"></i> Export Data as CSV
+                </button>
+                <a href="/settings" class="btn btn-outline btn-lg w-100" style="justify-content: flex-start;">
+                    <i class="fas fa-sliders"></i> Configure Settings
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-refresh dashboard stats every 10 seconds
+    async function refreshDashboardStats() {
+        try {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+            if (data.total_sessions !== undefined) document.getElementById('statSessions').textContent = data.total_sessions;
+            if (data.total_alerts !== undefined) document.getElementById('statAlerts').textContent = data.total_alerts;
+            if (data.total_blinks !== undefined) document.getElementById('statBlinks').textContent = data.total_blinks;
+        } catch(e) {
+            console.warn('Stats refresh error:', e);
+        }
+    }
+
+    async function refreshSystemStatus() {
+        try {
+            const res = await fetch('/api/health');
+            const data = await res.json();
+            const el = document.getElementById('statStatus');
+            const v = data.vision || {};
+            if (v.stream_active) {
+                el.textContent = 'MONITORING';
+                el.style.color = 'var(--accent-cyan)';
+            } else if (data.status === 'HEALTHY') {
+                el.textContent = 'ONLINE';
+                el.style.color = 'var(--accent-green)';
+            } else {
+                el.textContent = data.status || 'ONLINE';
+                el.style.color = 'var(--accent-amber)';
+            }
+        } catch(e) {
+            // Keep current display on error
+        }
+    }
+    
+    async function loadRecentAlerts() {
+        try {
+            const res = await fetch('/api/events?limit=5');
+            const events = await res.json();
+            const tbody = document.getElementById('recentAlertsBody');
+            
+            if (!Array.isArray(events) || events.length === 0) return;
+            
+            tbody.innerHTML = events.map(e => `
+                <tr>
+                    <td>${formatTimestamp(e.timestamp)}</td>
+                    <td><span class="text-mono">${parseFloat(e.ear_val || 0).toFixed(3)}</span></td>
+                    <td><span class="badge badge-${e.alert_level === 'DANGER' || e.alert_level === 'CRITICAL' ? 'danger' : 'warning'}">${e.alert_level}</span></td>
+                </tr>
+            `).join('');
+        } catch(e) {
+            console.warn('Events load error:', e);
+        }
+    }
+    
+    loadRecentAlerts();
+    refreshDashboardStats();
+    refreshSystemStatus();
+    setInterval(refreshDashboardStats, 10000);
+    setInterval(refreshSystemStatus, 8000);
+    setInterval(loadRecentAlerts, 15000);
+</script>
+{% endblock %}
+

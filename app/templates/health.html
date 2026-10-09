@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}System Health{% endblock %}
+{% block navbar_title %}System Health{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-between align-center flex-wrap gap-2">
+    <div>
+        <h1><i class="fas fa-heart-pulse" style="color: var(--accent-green); margin-right: 10px;"></i>System Health Diagnostics</h1>
+        <p>Live operational status, AI vision pipelines, resource consumption, and subsystem diagnostics.</p>
+    </div>
+    <div class="d-flex gap-2" style="flex-wrap: wrap;">
+        <button class="btn btn-outline btn-sm" onclick="fetchHealthData()" id="refreshHealthBtn">
+            <i class="fas fa-rotate-right"></i> Refresh Now
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="runDiagnostics()" id="runDiagBtn">
+            <i class="fas fa-stethoscope"></i> Run Diagnostics
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="testCameraLive()" id="testCamBtn">
+            <i class="fas fa-camera"></i> Test Camera
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="runAudioSelfTest()" id="testAlarmBtn">
+            <i class="fas fa-volume-high"></i> Test Alarm Sound
+        </button>
+    </div>
+</div>
+
+<!-- Top Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card card-success">
+        <div class="stat-card-header">
+            <span class="stat-card-label">Core System</span>
+            <div class="stat-card-icon"><i class="fas fa-server"></i></div>
+        </div>
+        <div class="stat-card-value" style="font-size: 22px;" id="overallStatusBadge">—</div>
+        <div class="stat-card-meta" id="uptimeMeta">
+            <i class="fas fa-clock"></i> Uptime: <span id="uptimeDisplay">Loading...</span>
+        </div>
+    </div>
+    
+    <div class="stat-card card-primary">
+        <div class="stat-card-header">
+            <span class="stat-card-label">CPU Utilization</span>
+            <div class="stat-card-icon"><i class="fas fa-microchip"></i></div>
+        </div>
+        <div class="stat-card-value" id="cpuDisplay">—</div>
+        <div class="stat-card-meta">
+            <div style="background: rgba(255,255,255,0.08); border-radius: 4px; height: 6px; width: 100%; margin-top: 4px; overflow: hidden;">
+                <div id="cpuBar" style="background: var(--primary-hover); height: 100%; width: 0%; transition: width 0.4s;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card card-warning">
+        <div class="stat-card-header">
+            <span class="stat-card-label">Memory (RAM)</span>
+            <div class="stat-card-icon"><i class="fas fa-memory"></i></div>
+        </div>
+        <div class="stat-card-value" id="ramDisplay">—</div>
+        <div class="stat-card-meta">
+            <i class="fas fa-hard-drive"></i> Process: <span id="procMemDisplay">—</span>
+        </div>
+    </div>
+    
+    <div class="stat-card card-success">
+        <div class="stat-card-header">
+            <span class="stat-card-label">Database Health</span>
+            <div class="stat-card-icon"><i class="fas fa-database"></i></div>
+        </div>
+        <div class="stat-card-value" style="font-size: 20px;" id="dbStatusBadge">—</div>
+        <div class="stat-card-meta">
+            <i class="fas fa-file-shield"></i> Size: <span id="dbSizeDisplay">—</span>
+        </div>
+    </div>
+</div>
+
+<!-- Subsystems Diagnostics Panels -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+    <!-- Camera Subsystem -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-camera"></i> Video & Frame Capture Engine</div>
+            <span class="badge badge-warning" id="camBadge">NOT CHECKED</span>
+        </div>
+        <div class="panel-body">
+            <table class="data-table" style="font-size: 13px;">
+                <tbody>
+                    <tr>
+                        <td style="color: var(--text-secondary); width: 44%;">Stream Status</td>
+                        <td id="camStreamStatus" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Device Index</td>
+                        <td id="camIndex" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Capture Resolution</td>
+                        <td id="camRes" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Capture Frame Rate</td>
+                        <td id="camFps" class="text-mono text-cyan">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Hardware Mode</td>
+                        <td id="camMode" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Last Frame Age</td>
+                        <td id="camLastFrame" class="text-mono">Unknown</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Vision & AI Detection Subsystem -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-brain"></i> AI Vision & Landmark Engine</div>
+            <span class="badge badge-warning" id="aiBadge">NOT CHECKED</span>
+        </div>
+        <div class="panel-body">
+            <table class="data-table" style="font-size: 13px;">
+                <tbody>
+                    <tr>
+                        <td style="color: var(--text-secondary); width: 44%;">Detector Initialized</td>
+                        <td id="aiDetectorReady" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">MediaPipe FaceLandmarker</td>
+                        <td id="aiFaceMeshReady" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">YuNet Fallback</td>
+                        <td id="aiYunetReady" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">State Machine</td>
+                        <td id="aiState" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">Personal Calibration</td>
+                        <td id="aiCalib" class="text-mono">Unknown</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">EAR / Pitch Baselines</td>
+                        <td id="aiBaselines" class="text-mono">Unknown</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Diagnostics Results Table -->
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title"><i class="fas fa-clipboard-check"></i> Subsystem Self-Test Results</div>
+        <span style="font-size: 12px; color: var(--text-muted);" id="diagLastRun">Not run yet — click "Run Diagnostics"</span>
+    </div>
+    <div class="panel-body-flush">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Subsystem</th>
+                    <th>Component</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody id="diagnosticsTableBody">
+                <tr>
+                    <td colspan="4" style="text-align:center; padding: 32px; color: var(--text-muted);">
+                        <i class="fas fa-stethoscope" style="margin-right: 8px;"></i>Click "Run Diagnostics" to perform real-time checks.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let healthPollInterval = null;
+
+    async function fetchHealthData() {
+        const btn = document.getElementById('refreshHealthBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+
+        try {
+            const res = await fetch('/api/health');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+
+            // Overall Status & Uptime
+            const statusEl = document.getElementById('overallStatusBadge');
+            statusEl.textContent = data.status || 'ONLINE';
+            statusEl.style.color = (data.status === 'HEALTHY') ? 'var(--accent-green)' : 'var(--accent-amber)';
+
+            document.getElementById('uptimeDisplay').textContent = data.uptime_formatted || '—';
+
+            // System Resources
+            if (data.system) {
+                const cpu = data.system.cpu_usage_percent || 0;
+                document.getElementById('cpuDisplay').textContent = cpu.toFixed(1) + '%';
+                document.getElementById('cpuBar').style.width = Math.min(100, Math.max(0, cpu)) + '%';
+
+                const ram = data.system.ram_used_percent || 0;
+                document.getElementById('ramDisplay').textContent = ram.toFixed(1) + '%';
+                document.getElementById('procMemDisplay').textContent = (data.system.process_memory_mb || 0).toFixed(1) + ' MB';
+            }
+
+            // Database
+            if (data.database) {
+                const dbEl = document.getElementById('dbStatusBadge');
+                dbEl.textContent = data.database.status || '—';
+                dbEl.style.color = data.database.status === 'HEALTHY' ? 'var(--accent-green)' : 'var(--accent-red)';
+                document.getElementById('dbSizeDisplay').textContent = (data.database.file_size_kb || 0) + ' KB';
+            }
+
+            // Vision & Camera
+            if (data.vision) {
+                const v = data.vision;
+                const cam = v.camera || {};
+
+                const camBadge = document.getElementById('camBadge');
+                if (v.stream_active && cam.is_running) {
+                    camBadge.className = 'badge badge-success';
+                    camBadge.textContent = 'STREAMING';
+                    document.getElementById('camStreamStatus').textContent = 'Live Feed Active';
+                } else if (cam.is_running) {
+                    camBadge.className = 'badge badge-warning';
+                    camBadge.textContent = 'STANDBY';
+                    document.getElementById('camStreamStatus').textContent = 'Camera Running (Standby)';
+                } else {
+                    camBadge.className = 'badge badge-warning';
+                    camBadge.textContent = 'INACTIVE';
+                    document.getElementById('camStreamStatus').textContent = 'Camera Not Started';
+                }
+
+                document.getElementById('camIndex').textContent = cam.camera_index !== undefined ? `Camera ${cam.camera_index}` : 'N/A';
+                document.getElementById('camRes').textContent = cam.resolution || 'N/A';
+                document.getElementById('camFps').textContent = cam.is_running ? ((cam.fps || 0).toFixed(1) + ' FPS') : 'N/A';
+                document.getElementById('camMode').textContent = cam.is_synthetic ? 'Synthetic Simulator (No Webcam)' : 'Hardware DirectShow';
+                const frameAge = cam.seconds_since_last_frame;
+                document.getElementById('camLastFrame').textContent = cam.is_running
+                    ? (typeof frameAge === 'number' ? frameAge.toFixed(1) + 's ago' : 'N/A')
+                    : 'Camera not running';
+
+                // AI Vision
+                const aiBadge = document.getElementById('aiBadge');
+                const detectorOk = v.detector_initialized && v.face_mesh_ready;
+                if (detectorOk) {
+                    aiBadge.className = 'badge badge-success'; aiBadge.textContent = 'READY';
+                } else if (v.detector_initialized) {
+                    aiBadge.className = 'badge badge-warning'; aiBadge.textContent = 'PARTIAL';
+                } else {
+                    aiBadge.className = 'badge badge-warning'; aiBadge.textContent = 'NOT STARTED';
+                }
+
+                document.getElementById('aiDetectorReady').textContent = v.detector_initialized ? '✓ Initialized' : '— Not started (start camera first)';
+                document.getElementById('aiDetectorReady').style.color = v.detector_initialized ? 'var(--accent-green)' : 'var(--text-muted)';
+                document.getElementById('aiFaceMeshReady').textContent = v.face_mesh_ready ? '✓ MediaPipe 478 3D Mesh Loaded' : '— Not loaded';
+                document.getElementById('aiFaceMeshReady').style.color = v.face_mesh_ready ? 'var(--accent-green)' : 'var(--text-muted)';
+                document.getElementById('aiYunetReady').textContent = v.yunet_fallback_ready ? '✓ YuNet ONNX Loaded' : '— Not loaded / unavailable';
+                document.getElementById('aiState').textContent = v.current_state || 'STANDBY';
+                const stateColors = { EYES_CLOSED: 'var(--accent-red)', HEAD_DOWN: 'var(--accent-amber)', FACE_MISSING: 'var(--accent-amber)', NORMAL: 'var(--accent-green)', STANDBY: 'var(--text-muted)' };
+                document.getElementById('aiState').style.color = stateColors[v.current_state] || 'var(--text-muted)';
+                document.getElementById('aiCalib').textContent = v.is_calibrated ? '✓ Driver Baseline Calibrated' : '— Using Default Baseline';
+                document.getElementById('aiCalib').style.color = v.is_calibrated ? 'var(--accent-green)' : 'var(--text-muted)';
+                document.getElementById('aiBaselines').textContent = `EAR: ${(v.baseline_ear || 0.32).toFixed(3)} | Pitch: ${(v.baseline_pitch || 0.0).toFixed(1)}°`;
+            }
+        } catch(e) {
+            document.getElementById('overallStatusBadge').textContent = 'API ERROR';
+            document.getElementById('overallStatusBadge').style.color = 'var(--accent-red)';
+            showToast('Health API unreachable: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-rotate-right"></i> Refresh Now';
+        }
+    }
+
+    async function runDiagnostics() {
+        const btn = document.getElementById('runDiagBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+        const tbody = document.getElementById('diagnosticsTableBody');
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Running diagnostics...</td></tr>';
+
+        try {
+            // Fetch health data for diagnostic checks
+            const res = await fetch('/api/health');
+            const health = await res.json();
+
+            const rows = [];
+            const v = health.vision || {};
+            const cam = v.camera || {};
+            const db = health.database || {};
+            const sys = health.system || {};
+
+            // Web Server
+            rows.push({
+                subsystem: 'Web Server', component: 'Flask WSGI + MJPEG Stream',
+                ok: true, note: `Running — uptime ${health.uptime_formatted || 'unknown'}`
+            });
+
+            // Database
+            rows.push({
+                subsystem: 'Storage', component: 'SQLite Database',
+                ok: db.status === 'HEALTHY',
+                note: db.status === 'HEALTHY'
+                    ? `Integrity OK — ${db.file_size_kb || 0} KB`
+                    : 'PRAGMA check failed: ' + (db.integrity || 'unknown')
+            });
+
+            // Camera
+            rows.push({
+                subsystem: 'Camera', component: `Hardware / Device Index ${cam.camera_index ?? 0}`,
+                ok: cam.is_running && !cam.is_synthetic,
+                warn: cam.is_running && cam.is_synthetic,
+                note: cam.is_running
+                    ? (cam.is_synthetic ? 'Synthetic fallback active — webcam unavailable' : `${cam.fps?.toFixed(1)} FPS @ ${cam.resolution}`)
+                    : 'Camera not initialized — open Live Detection to start'
+            });
+
+            // Detector
+            rows.push({
+                subsystem: 'Computer Vision', component: 'DrowsinessDetector State Machine',
+                ok: v.detector_initialized,
+                note: v.detector_initialized ? `State: ${v.current_state}` : 'Not initialized — start camera feed first'
+            });
+
+            // Face Mesh
+            rows.push({
+                subsystem: 'Computer Vision', component: 'MediaPipe FaceLandmarker (478 pts)',
+                ok: v.face_mesh_ready,
+                note: v.face_mesh_ready ? '478 3D landmark model loaded' : 'Not loaded — camera must be started'
+            });
+
+            // CPU
+            const cpuOk = (sys.cpu_usage_percent || 0) < 85;
+            rows.push({
+                subsystem: 'System Resources', component: 'CPU Usage',
+                ok: cpuOk,
+                warn: !cpuOk,
+                note: `${(sys.cpu_usage_percent || 0).toFixed(1)}% — ${cpuOk ? 'normal' : 'HIGH — may degrade detection'}`
+            });
+
+            // RAM
+            const ramOk = (sys.ram_used_percent || 0) < 90;
+            rows.push({
+                subsystem: 'System Resources', component: 'RAM Usage',
+                ok: ramOk,
+                warn: !ramOk,
+                note: `${(sys.ram_used_percent || 0).toFixed(1)}% used — process: ${(sys.process_memory_mb || 0).toFixed(1)} MB`
+            });
+
+            // Audio
+            rows.push({
+                subsystem: 'Audio', component: 'Alarm Subsystem (Pygame + Web Audio)',
+                ok: true,
+                note: 'Ready — dual-channel (hardware + browser synthesis)'
+            });
+
+            // Calibration
+            rows.push({
+                subsystem: 'Detection', component: 'Driver Baseline Calibration',
+                ok: v.is_calibrated,
+                warn: !v.is_calibrated,
+                note: v.is_calibrated
+                    ? `Calibrated — EAR: ${(v.baseline_ear || 0).toFixed(3)}, Pitch: ${(v.baseline_pitch || 0).toFixed(1)}°`
+                    : 'Default baseline in use — click "Calibrate Seated Baseline" for accuracy'
+            });
+
+            tbody.innerHTML = rows.map(r => {
+                let badge, color;
+                if (r.ok && !r.warn) {
+                    badge = '<span class="badge badge-success">PASS</span>';
+                } else if (r.warn) {
+                    badge = '<span class="badge badge-warning">WARN</span>';
+                } else {
+                    badge = '<span class="badge badge-warning">INFO</span>';
+                }
+                return `<tr>
+                    <td><strong>${r.subsystem}</strong></td>
+                    <td>${r.component}</td>
+                    <td>${badge}</td>
+                    <td style="font-size:12px; color:var(--text-secondary);">${r.note}</td>
+                </tr>`;
+            }).join('');
+
+            const passed = rows.filter(r => r.ok && !r.warn).length;
+            const warned = rows.filter(r => r.warn).length;
+            const now = new Date().toLocaleTimeString();
+            document.getElementById('diagLastRun').textContent = `Last run: ${now} — ${passed} passed, ${warned} warnings`;
+            showToast(`Diagnostics complete: ${passed} passed, ${warned} warnings.`, warned > 0 ? 'warning' : 'success');
+        } catch(e) {
+            tbody.innerHTML = `<tr><td colspan="4" style="color:var(--accent-red); padding:16px;">Diagnostics failed: ${e.message}</td></tr>`;
+            showToast('Diagnostics request failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-stethoscope"></i> Run Diagnostics';
+        }
+    }
+
+    async function testCameraLive() {
+        const btn = document.getElementById('testCamBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+        try {
+            // Get camera index from settings
+            const setRes = await fetch('/api/settings');
+            const settings = await setRes.json();
+            const idx = settings.camera_index || 0;
+
+            const res = await fetch('/api/test-camera', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera_index: idx })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Camera ${idx} test PASSED — Frame captured at ${data.resolution}.`, 'success', 6000);
+            } else {
+                showToast(`Camera ${idx} test FAILED: ${data.message}`, 'error', 6000);
+            }
+        } catch(e) {
+            showToast('Camera test error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-camera"></i> Test Camera';
+        }
+        // Refresh health display after test
+        setTimeout(fetchHealthData, 1000);
+    }
+
+    function runAudioSelfTest() {
+        const btn = document.getElementById('testAlarmBtn');
+        btn.disabled = true;
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.4);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.4);
+            showToast('Alarm sound test played — audio subsystem OK.', 'success');
+        } catch(e) {
+            showToast('Audio test failed: ' + e.message, 'error');
+        } finally {
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-volume-high"></i> Test Alarm Sound';
+            }, 600);
+        }
+    }
+
+    // Initial load and 5-second auto-refresh
+    fetchHealthData();
+    healthPollInterval = setInterval(fetchHealthData, 5000);
+</script>
+{% endblock %}

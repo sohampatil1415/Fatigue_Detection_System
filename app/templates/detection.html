@@ -1,0 +1,500 @@
+{% extends "base.html" %}
+{% block title %}Live Detection{% endblock %}
+{% block navbar_title %}Live Detection{% endblock %}
+{% block content %}
+<style>
+    .video-container.drowsy-alert-border {
+        border: 4px solid var(--accent-red) !important;
+        box-shadow: 0 0 35px rgba(239, 68, 68, 0.85) !important;
+        animation: pulse-danger 0.5s infinite alternate;
+    }
+    .video-container.warning-alert-border {
+        border: 4px solid var(--accent-amber) !important;
+        box-shadow: 0 0 25px rgba(245, 158, 11, 0.7) !important;
+        animation: pulse-warn 0.8s infinite alternate;
+    }
+    @keyframes pulse-danger {
+        from { box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        to   { box-shadow: 0 0 50px rgba(239, 68, 68, 1.0); }
+    }
+    @keyframes pulse-warn {
+        from { box-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
+        to   { box-shadow: 0 0 35px rgba(245, 158, 11, 0.9); }
+    }
+</style>
+
+<div class="page-header d-flex justify-between align-center flex-wrap gap-2">
+    <div>
+        <h1><i class="fas fa-video" style="color: var(--accent-cyan); margin-right: 10px;"></i>Real-Time Driver Monitoring</h1>
+        <p>Live camera stream with 3D facial landmark mesh, EAR eye closure timing, head-down tracking, and state management.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline btn-sm" onclick="triggerLiveCalibration()" id="calibBtn">
+            <i class="fas fa-crosshairs"></i> Calibrate Seated Baseline
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="resetDetection()" id="resetBtn">
+            <i class="fas fa-rotate-left"></i> Reset Detection
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="playTestAlarmManual()">
+            <i class="fas fa-bell"></i> Test Alarm
+        </button>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    <!-- Video Feed Panel -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-camera"></i> Live Video Feed & HUD</div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-success btn-sm" id="startBtn" onclick="startDetection()">
+                    <i class="fas fa-play"></i> Start Camera
+                </button>
+                <button class="btn btn-danger btn-sm" id="stopBtn" onclick="stopDetection()" style="display:none;">
+                    <i class="fas fa-stop"></i> Stop Camera
+                </button>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="video-container" id="videoContainer">
+                <div class="empty-state" id="videoPlaceholder">
+                    <div class="empty-state-icon"><i class="fas fa-video-slash"></i></div>
+                    <div class="empty-state-title">Camera Feed Offline</div>
+                    <div class="empty-state-desc">Click "Start Camera" to initiate real-time AI vision monitoring.</div>
+                </div>
+                <img id="videoFeed" src="" alt="Live Feed" style="display:none; width: 100%; border-radius: 8px;">
+            </div>
+            <!-- Alert Banner -->
+            <div id="alertBanner" style="display:none; margin-top: 12px; padding: 12px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; text-align:center;"></div>
+        </div>
+    </div>
+    
+    <!-- Metrics Panel -->
+    <div>
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title"><i class="fas fa-chart-bar"></i> Live Biometric Telemetry</div>
+            </div>
+            <div class="panel-body">
+                <div style="display: grid; gap: 12px;">
+                    <!-- Driver State -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">System State</div>
+                            <div class="metric-mini-value" id="metricState" style="font-size: 15px; color: var(--text-muted);">STANDBY</div>
+                        </div>
+                    </div>
+                    <!-- Eye Aspect Ratio -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Eye Aspect Ratio (EAR)</div>
+                            <div class="metric-mini-value" id="metricEAR">—</div>
+                        </div>
+                    </div>
+                    <!-- Eye Status -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Eye State</div>
+                            <div class="metric-mini-value" id="metricEyeStatus" style="font-size: 15px; color: var(--text-muted);">—</div>
+                        </div>
+                    </div>
+                    <!-- Head Pose Pitch -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Head Nod Pitch</div>
+                            <div class="metric-mini-value text-mono" id="metricPitch" style="font-size: 15px; color: var(--text-muted);">—</div>
+                        </div>
+                    </div>
+                    <!-- EAR Threshold (live) -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">EAR Threshold (Active)</div>
+                            <div class="metric-mini-value text-mono" id="metricEarThresh" style="font-size: 14px; color: var(--text-muted);">—</div>
+                        </div>
+                    </div>
+                    <!-- Total Blinks -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Total Blinks Tracked</div>
+                            <div class="metric-mini-value" id="metricBlinks">0</div>
+                        </div>
+                    </div>
+                    <!-- Drowsy Alerts -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Drowsy Events (Session)</div>
+                            <div class="metric-mini-value text-red" id="metricDrowsy">0</div>
+                        </div>
+                    </div>
+                    <!-- Stream FPS -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Stream Frame Rate</div>
+                            <div class="metric-mini-value text-cyan" id="metricFPS">— FPS</div>
+                        </div>
+                    </div>
+                    <!-- Driver Assessment -->
+                    <div class="metric-mini">
+                        <div>
+                            <div class="metric-mini-label">Driver Assessment</div>
+                            <div class="metric-mini-value" id="metricDriverStatus" style="font-size: 13px; color: var(--text-muted);">STANDBY</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Alarm Controls -->
+        <div class="panel" style="margin-top: 20px;">
+            <div class="panel-header">
+                <div class="panel-title"><i class="fas fa-volume-high"></i> Alarm Controls</div>
+            </div>
+            <div class="panel-body">
+                <div class="d-flex align-center justify-between" style="margin-bottom: 12px;">
+                    <span style="font-size: 13px; color: var(--text-secondary);">Enable Audio Alarm</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="alarmToggle" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group mb-0">
+                    <label class="form-label">Alarm Volume: <span id="volVal">80</span>%</label>
+                    <input type="range" id="volumeSlider" min="0" max="100" value="80" oninput="document.getElementById('volVal').textContent = this.value">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let metricsInterval = null;
+    let isDetecting = false;
+    let audioCtx = null;
+    let lastAlertTime = 0;
+    let lastAlarmSoundTime = 0;
+    const ALARM_COOLDOWN_MS = 1500;
+
+    // ─── Web Audio Alarm (Multi-tone urgent siren) ───
+    let audioUnlocked = false;
+    let backupAlarmAudio = null;
+
+    // Pre-initialize AudioContext on first user interaction (required by browsers)
+    function unlockAudio() {
+        if (audioUnlocked) return;
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            // Play a silent buffer to fully unlock
+            const buf = audioCtx.createBuffer(1, 1, 22050);
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            src.connect(audioCtx.destination);
+            src.start(0);
+            audioUnlocked = true;
+            console.log('[DrowsiGuard] Audio context unlocked');
+        } catch(e) { console.warn('Audio unlock failed:', e); }
+
+        // Also prepare HTML5 Audio fallback with the server alarm file
+        try {
+            backupAlarmAudio = new Audio('/static/audio/alarm.wav');
+            backupAlarmAudio.volume = 0.8;
+            backupAlarmAudio.load();
+        } catch(e) {}
+    }
+    document.addEventListener('click', unlockAudio, { once: false });
+    document.addEventListener('keydown', unlockAudio, { once: false });
+
+    function playWebAlarm(forced = false) {
+        if (!forced && !document.getElementById('alarmToggle').checked) return;
+        const now = Date.now();
+        if (!forced && (now - lastAlarmSoundTime < ALARM_COOLDOWN_MS)) return;
+        lastAlarmSoundTime = now;
+
+        const vol = (parseInt(document.getElementById('volumeSlider').value) || 80) / 100;
+        console.log('[DrowsiGuard] ALARM triggered, vol=' + vol);
+
+        // Method 1: Web Audio API — multi-tone urgent siren (1.2 seconds)
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const t = audioCtx.currentTime;
+            // Three descending urgent tones
+            const tones = [
+                { freq: 880, start: t, end: t + 0.35 },
+                { freq: 660, start: t + 0.35, end: t + 0.7 },
+                { freq: 880, start: t + 0.7, end: t + 1.2 }
+            ];
+
+            tones.forEach(tone => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(tone.freq, tone.start);
+                osc.frequency.exponentialRampToValueAtTime(tone.freq * 0.6, tone.end);
+                gain.gain.setValueAtTime(vol * 0.6, tone.start);
+                gain.gain.setValueAtTime(vol * 0.6, tone.end - 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, tone.end);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(tone.start);
+                osc.stop(tone.end);
+            });
+        } catch(e) {
+            console.warn('Web Audio alarm error:', e);
+        }
+
+        // Method 2: HTML5 Audio fallback (plays the alarm.wav file)
+        try {
+            if (backupAlarmAudio) {
+                backupAlarmAudio.currentTime = 0;
+                backupAlarmAudio.volume = Math.min(1.0, vol * 0.9);
+                backupAlarmAudio.play().catch(() => {});
+            }
+        } catch(e) {}
+    }
+
+    function playTestAlarmManual() {
+        unlockAudio(); // Ensure audio is unlocked
+        playWebAlarm(true);
+        showToast('Test alarm played.', 'info');
+    }
+
+    // ─── Start Detection ───
+    async function startDetection() {
+        const startBtn = document.getElementById('startBtn');
+        startBtn.disabled = true;
+        startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+
+        try {
+            const res = await fetch('/start_camera');
+            const data = await res.json();
+
+            if (data.status === 'started' || data.status === 'already_running') {
+                const feed = document.getElementById('videoFeed');
+                const placeholder = document.getElementById('videoPlaceholder');
+                feed.src = '/video_feed?' + Date.now();
+                feed.style.display = 'block';
+                placeholder.style.display = 'none';
+                startBtn.style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'inline-flex';
+                isDetecting = true;
+                startMetricsPolling();
+
+                const badge = document.getElementById('sidebarLiveBadge');
+                if (badge) badge.style.display = 'inline';
+
+                if (data.status === 'already_running') {
+                    showToast('Camera already active — reconnected to feed.', 'info');
+                } else {
+                    showToast('Live camera detection activated!', 'success');
+                }
+            } else {
+                showToast('Failed to start camera — check settings or try again.', 'error');
+                startBtn.style.display = 'inline-flex';
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-play"></i> Start Camera';
+            }
+        } catch(e) {
+            showToast('Camera start error: ' + e.message, 'error');
+            startBtn.style.display = 'inline-flex';
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play"></i> Start Camera';
+        }
+    }
+
+    // ─── Stop Detection ───
+    async function stopDetection() {
+        try {
+            await fetch('/stop_camera');
+        } catch(e) {}
+
+        const feed = document.getElementById('videoFeed');
+        const placeholder = document.getElementById('videoPlaceholder');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        feed.src = '';
+        feed.style.display = 'none';
+        placeholder.style.display = 'block';
+        startBtn.style.display = 'inline-flex';
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="fas fa-play"></i> Start Camera';
+        stopBtn.style.display = 'none';
+        isDetecting = false;
+        stopMetricsPolling();
+
+        const container = document.getElementById('videoContainer');
+        container.classList.remove('drowsy-alert-border', 'warning-alert-border');
+
+        const alertBanner = document.getElementById('alertBanner');
+        alertBanner.style.display = 'none';
+
+        resetMetricDisplay();
+        showToast('Detection session stopped.', 'warning');
+
+        const badge = document.getElementById('sidebarLiveBadge');
+        if (badge) badge.style.display = 'none';
+    }
+
+    // ─── Reset Detection (clear state, keep camera running) ───
+    async function resetDetection() {
+        if (!isDetecting) {
+            showToast('Start the camera first before resetting.', 'warning');
+            return;
+        }
+        // Re-trigger calibration to reset state machine
+        try {
+            const res = await fetch('/api/calibrate', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'calibrating') {
+                showToast('Detection state reset. Look straight ahead to recalibrate.', 'info', 5000);
+            } else {
+                showToast('Detection state reset — camera not running.', 'warning');
+            }
+        } catch(e) {
+            showToast('Reset error: ' + e.message, 'error');
+        }
+        const container = document.getElementById('videoContainer');
+        container.classList.remove('drowsy-alert-border', 'warning-alert-border');
+        document.getElementById('alertBanner').style.display = 'none';
+    }
+
+    // ─── Calibration ───
+    async function triggerLiveCalibration() {
+        const btn = document.getElementById('calibBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/calibrate', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'calibrating') {
+                showToast('Calibrating: Look straight ahead with open eyes for 1–2 seconds.', 'info', 6000);
+            } else {
+                showToast('Start the camera first before calibrating.', 'warning');
+            }
+        } catch(e) {
+            showToast('Calibration error: ' + e.message, 'error');
+        } finally {
+            setTimeout(() => { btn.disabled = false; }, 3000);
+        }
+    }
+
+    // ─── Metrics Polling ───
+    function startMetricsPolling() {
+        if (metricsInterval) clearInterval(metricsInterval);
+        metricsInterval = setInterval(pollMetrics, 300);
+    }
+
+    function stopMetricsPolling() {
+        if (metricsInterval) { clearInterval(metricsInterval); metricsInterval = null; }
+    }
+
+    async function pollMetrics() {
+        try {
+            const res = await fetch('/api/metrics');
+            if (!res.ok) return;
+            const m = await res.json();
+
+            document.getElementById('metricEAR').textContent = typeof m.ear === 'number' ? m.ear.toFixed(3) : '—';
+            document.getElementById('metricEyeStatus').textContent = m.eye_status || '—';
+            document.getElementById('metricBlinks').textContent = m.total_blinks ?? 0;
+            document.getElementById('metricDrowsy').textContent = m.drowsy_events ?? 0;
+            document.getElementById('metricFPS').textContent = typeof m.fps === 'number' ? m.fps.toFixed(1) + ' FPS' : '— FPS';
+            document.getElementById('metricEarThresh').textContent = typeof m.ear_threshold === 'number' ? m.ear_threshold.toFixed(2) : '—';
+
+            const pitchEl = document.getElementById('metricPitch');
+            const p = typeof m.head_pitch === 'number' ? m.head_pitch : null;
+            pitchEl.textContent = p !== null ? (p > 0 ? '+' : '') + p.toFixed(1) + '°' : '—';
+
+            const stateEl = document.getElementById('metricState');
+            const statusEl = document.getElementById('metricDriverStatus');
+            const container = document.getElementById('videoContainer');
+            const alertBanner = document.getElementById('alertBanner');
+            const eyeEl = document.getElementById('metricEyeStatus');
+
+            const stateColors = {
+                EYES_CLOSED: 'var(--accent-red)',
+                HEAD_DOWN: 'var(--accent-amber)',
+                FACE_MISSING: 'var(--accent-amber)',
+                LOW_CONFIDENCE: 'var(--accent-cyan)',
+                CAMERA_ERROR: 'var(--accent-red)',
+                NORMAL: 'var(--accent-green)'
+            };
+
+            const state = m.state || 'NORMAL';
+            stateEl.textContent = state;
+            stateEl.style.color = stateColors[state] || 'var(--text-muted)';
+
+            if (state === 'EYES_CLOSED') {
+                statusEl.textContent = '🚨 DROWSINESS: EYES CLOSED';
+                statusEl.style.color = 'var(--accent-red)';
+                container.classList.remove('warning-alert-border');
+                container.classList.add('drowsy-alert-border');
+                showAlertBanner('🚨 ALERT: Eyes Closed — Possible Drowsiness', '#ef4444');
+                playWebAlarm();
+            } else if (state === 'HEAD_DOWN') {
+                statusEl.textContent = '⚠️ DROWSINESS: HEAD DOWN';
+                statusEl.style.color = 'var(--accent-amber)';
+                container.classList.remove('drowsy-alert-border');
+                container.classList.add('warning-alert-border');
+                showAlertBanner('⚠️ WARNING: Head Down — Monitor Driver', '#f59e0b');
+                playWebAlarm();
+            } else if (state === 'FACE_MISSING') {
+                statusEl.textContent = '⚠️ DRIVER OUT OF VIEW';
+                statusEl.style.color = 'var(--accent-amber)';
+                container.classList.remove('drowsy-alert-border', 'warning-alert-border');
+                showAlertBanner('⚠️ Driver face not visible — camera obstruction?', '#f59e0b');
+            } else if (state === 'CAMERA_ERROR') {
+                statusEl.textContent = '✗ CAMERA ERROR';
+                statusEl.style.color = 'var(--accent-red)';
+                container.classList.remove('drowsy-alert-border', 'warning-alert-border');
+                showAlertBanner('✗ Camera error — check device connection', '#ef4444');
+            } else if (state === 'LOW_CONFIDENCE') {
+                statusEl.textContent = 'TRACKING UNCERTAIN';
+                statusEl.style.color = 'var(--accent-cyan)';
+                container.classList.remove('drowsy-alert-border', 'warning-alert-border');
+                alertBanner.style.display = 'none';
+            } else {
+                statusEl.textContent = m.is_calibrated ? 'ACTIVE & ALERT (CALIBRATED)' : 'ACTIVE & ALERT';
+                statusEl.style.color = 'var(--accent-green)';
+                container.classList.remove('drowsy-alert-border', 'warning-alert-border');
+                alertBanner.style.display = 'none';
+            }
+
+            // Eye status color
+            if (m.eye_status === 'CLOSED') eyeEl.style.color = 'var(--accent-red)';
+            else if (m.eye_status === 'DROWSY') eyeEl.style.color = 'var(--accent-amber)';
+            else if (m.eye_status === 'OPEN') eyeEl.style.color = 'var(--accent-green)';
+            else eyeEl.style.color = 'var(--text-muted)';
+
+        } catch(e) {
+            // silently ignore network errors during polling
+        }
+    }
+
+    function showAlertBanner(text, color) {
+        const b = document.getElementById('alertBanner');
+        b.style.display = 'block';
+        b.style.background = color + '22';
+        b.style.border = '1px solid ' + color + '66';
+        b.style.color = color;
+        b.textContent = text;
+    }
+
+    function resetMetricDisplay() {
+        ['metricEAR', 'metricBlinks', 'metricDrowsy', 'metricEarThresh'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '—';
+        });
+        document.getElementById('metricFPS').textContent = '— FPS';
+        document.getElementById('metricPitch').textContent = '—';
+        const stateEl = document.getElementById('metricState');
+        stateEl.textContent = 'STANDBY'; stateEl.style.color = 'var(--text-muted)';
+        document.getElementById('metricEyeStatus').textContent = '—';
+        document.getElementById('metricDriverStatus').textContent = 'STANDBY';
+        document.getElementById('metricDriverStatus').style.color = 'var(--text-muted)';
+    }
+</script>
+{% endblock %}

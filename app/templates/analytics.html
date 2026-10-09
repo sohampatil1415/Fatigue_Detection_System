@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block navbar_title %}Analytics{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-chart-line" style="color: var(--accent-purple); margin-right: 10px;"></i>Analytics</h1>
+    <p>In-depth visual analysis of drowsiness detection trends, blink patterns, and EAR distribution from real session data.</p>
+</div>
+
+<!-- Period Filter -->
+<div class="d-flex gap-2 align-center" style="margin-bottom: 24px;">
+    <button class="btn btn-primary btn-sm" onclick="loadAnalytics('daily')" id="btnDaily">Today (Hourly)</button>
+    <button class="btn btn-outline btn-sm" onclick="loadAnalytics('weekly')" id="btnWeekly">This Week</button>
+    <button class="btn btn-outline btn-sm" onclick="loadAnalytics('monthly')" id="btnMonthly">Last 4 Weeks</button>
+    <span style="margin-left: 16px; color: var(--text-muted); font-size: 12px;" id="analyticsSummary">Loading data...</span>
+</div>
+
+<!-- Charts Row 1 -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-bell"></i> Drowsiness Alerts Over Time</div>
+        </div>
+        <div class="panel-body">
+            <div class="chart-container">
+                <canvas id="alertsChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-eye"></i> Blink Trends</div>
+        </div>
+        <div class="panel-body">
+            <div class="chart-container">
+                <canvas id="blinksChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 2 -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-chart-pie"></i> Alert Level Distribution</div>
+        </div>
+        <div class="panel-body">
+            <div class="chart-container">
+                <canvas id="levelChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-wave-square"></i> EAR Value Distribution</div>
+        </div>
+        <div class="panel-body">
+            <div class="chart-container">
+                <canvas id="earChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const chartColors = {
+        primary: 'rgba(99, 102, 241, 1)',
+        primaryFade: 'rgba(99, 102, 241, 0.15)',
+        red: 'rgba(239, 68, 68, 1)',
+        redFade: 'rgba(239, 68, 68, 0.15)',
+        green: 'rgba(16, 185, 129, 1)',
+        greenFade: 'rgba(16, 185, 129, 0.15)',
+        amber: 'rgba(245, 158, 11, 1)',
+        amberFade: 'rgba(245, 158, 11, 0.15)',
+        cyan: 'rgba(34, 211, 238, 1)',
+        cyanFade: 'rgba(34, 211, 238, 0.15)',
+        purple: 'rgba(168, 85, 247, 1)',
+        purpleFade: 'rgba(168, 85, 247, 0.15)'
+    };
+    
+    const chartDefaults = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: '#a0a4b8', font: { family: 'Inter', size: 12 } } }
+        },
+        scales: {
+            x: { ticks: { color: '#6b7094', font: { family: 'Inter', size: 11 } }, grid: { color: 'rgba(99,102,241,0.06)' } },
+            y: { beginAtZero: true, ticks: { color: '#6b7094', font: { family: 'Inter', size: 11 }, stepSize: 1 }, grid: { color: 'rgba(99,102,241,0.06)' } }
+        }
+    };
+    
+    let alertsChart, blinksChart, levelChart, earChart;
+    
+    async function loadAnalytics(period = 'daily') {
+        // Update button states
+        ['btnDaily', 'btnWeekly', 'btnMonthly'].forEach(id => {
+            document.getElementById(id).className = 'btn btn-outline btn-sm';
+        });
+        document.getElementById('btn' + period.charAt(0).toUpperCase() + period.slice(1)).className = 'btn btn-primary btn-sm';
+        
+        try {
+            const res = await fetch('/api/analytics?period=' + period);
+            const data = await res.json();
+            
+            const labels = data.labels || [];
+            const alertCounts = data.alert_counts || [];
+            const blinkCounts = data.blink_counts || [];
+            const dangerCount = data.danger_count || 0;
+            const warningCount = data.warning_count || 0;
+            const earBuckets = data.ear_buckets || [0,0,0,0,0];
+            const earLabels = data.ear_labels || ['0.00–0.15','0.15–0.20','0.20–0.25','0.25–0.30','0.30+'];
+            
+            // Summary text
+            document.getElementById('analyticsSummary').textContent = 
+                `${data.total_events || 0} alert events, ${data.total_blinks_period || 0} blinks in this period`;
+            
+            // Destroy existing charts
+            if (alertsChart) alertsChart.destroy();
+            if (blinksChart) blinksChart.destroy();
+            if (levelChart) levelChart.destroy();
+            if (earChart) earChart.destroy();
+            
+            // Alerts Line Chart
+            alertsChart = new Chart(document.getElementById('alertsChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Drowsy Alerts',
+                        data: alertCounts,
+                        borderColor: chartColors.red,
+                        backgroundColor: chartColors.redFade,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: chartColors.red
+                    }]
+                },
+                options: { ...chartDefaults }
+            });
+            
+            // Blinks Bar Chart
+            blinksChart = new Chart(document.getElementById('blinksChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Blinks Detected',
+                        data: blinkCounts,
+                        backgroundColor: chartColors.cyanFade,
+                        borderColor: chartColors.cyan,
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: { ...chartDefaults }
+            });
+            
+            // Level Doughnut Chart
+            const hasData = dangerCount > 0 || warningCount > 0;
+            levelChart = new Chart(document.getElementById('levelChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: hasData ? ['Danger / Critical', 'Warning'] : ['No Data'],
+                    datasets: [{
+                        data: hasData ? [dangerCount, warningCount] : [1],
+                        backgroundColor: hasData ? [chartColors.redFade, chartColors.amberFade] : ['rgba(107,112,148,0.15)'],
+                        borderColor: hasData ? [chartColors.red, chartColors.amber] : ['rgba(107,112,148,0.4)'],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#a0a4b8', font: { family: 'Inter', size: 12 }, padding: 20 } }
+                    }
+                }
+            });
+            
+            // EAR Distribution Bar Chart
+            earChart = new Chart(document.getElementById('earChart'), {
+                type: 'bar',
+                data: {
+                    labels: earLabels,
+                    datasets: [{
+                        label: 'Frequency',
+                        data: earBuckets,
+                        backgroundColor: chartColors.purpleFade,
+                        borderColor: chartColors.purple,
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: { ...chartDefaults }
+            });
+        } catch(e) {
+            console.warn('Analytics load error:', e);
+            document.getElementById('analyticsSummary').textContent = 'Failed to load analytics data.';
+        }
+    }
+    
+    loadAnalytics('daily');
+</script>
+{% endblock %}

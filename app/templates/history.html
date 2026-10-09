@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Detection History{% endblock %}
+{% block navbar_title %}Detection History{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-clock-rotate-left" style="color: var(--accent-amber); margin-right: 10px;"></i>Detection History</h1>
+    <p>Complete log of all drowsiness detection events with search, filtering, and export capabilities.</p>
+</div>
+
+<!-- Toolbar -->
+<div class="panel">
+    <div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+        <div class="d-flex gap-2 align-center flex-wrap">
+            <div class="search-bar">
+                <i class="fas fa-search"></i>
+                <input type="text" class="form-control" id="searchInput" placeholder="Search by session ID..." style="padding-left:40px; width:260px;" oninput="filterEvents()">
+            </div>
+            <select class="form-control" id="filterLevel" style="width: 160px;" onchange="filterEvents()">
+                <option value="">All Levels</option>
+                <option value="DANGER">Danger</option>
+                <option value="WARNING">Warning</option>
+            </select>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline btn-sm" onclick="loadEvents()"><i class="fas fa-rotate-right"></i> Refresh</button>
+            <button class="btn btn-primary btn-sm" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Export CSV</button>
+            <button class="btn btn-danger btn-sm" onclick="exportPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button>
+        </div>
+    </div>
+    <div class="panel-body-flush">
+        <table class="data-table" id="historyTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Session</th>
+                    <th>Timestamp</th>
+                    <th>EAR Value</th>
+                    <th>Duration (s)</th>
+                    <th>Alert Level</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody">
+                <tr>
+                    <td colspan="7">
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
+                            <div class="empty-state-title">No detection events yet</div>
+                            <div class="empty-state-desc">Start a detection session from the Live Detection page to generate event data.</div>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+<div class="pagination" id="paginationContainer"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allEvents = [];
+    let filteredEvents = [];
+    let currentPage = 1;
+    const eventsPerPage = 10;
+    
+    async function loadEvents() {
+        try {
+            const res = await fetch('/api/events?limit=200');
+            allEvents = await res.json();
+            filterEvents();
+            showToast('Events refreshed successfully.', 'info');
+        } catch(e) {
+            showToast('Failed to load events.', 'error');
+        }
+    }
+    
+    function filterEvents() {
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        const level = document.getElementById('filterLevel').value;
+        
+        filteredEvents = allEvents.filter(e => {
+            let match = true;
+            if (search) match = match && (e.session_id || '').toLowerCase().includes(search);
+            if (level) match = match && (e.alert_level || '').toUpperCase() === level;
+            return match;
+        });
+        
+        currentPage = 1;
+        renderTable();
+        renderPagination();
+    }
+    
+    function renderTable() {
+        const tbody = document.getElementById('historyBody');
+        const start = (currentPage - 1) * eventsPerPage;
+        const pageEvents = filteredEvents.slice(start, start + eventsPerPage);
+        
+        if (pageEvents.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7">
+                <div class="empty-state" style="padding: 40px;">
+                    <div class="empty-state-icon"><i class="fas fa-filter-circle-xmark"></i></div>
+                    <div class="empty-state-title">No matching events</div>
+                    <div class="empty-state-desc">Try adjusting your search or filter criteria.</div>
+                </div>
+            </td></tr>`;
+            return;
+        }
+        
+        tbody.innerHTML = pageEvents.map(e => `
+            <tr id="row-${e.id}">
+                <td><span class="text-mono">#${e.id}</span></td>
+                <td><span class="badge badge-info">${(e.session_id || '').substring(0, 16)}</span></td>
+                <td>${formatTimestamp(e.timestamp)}</td>
+                <td><span class="text-mono">${parseFloat(e.ear_val).toFixed(3)}</span></td>
+                <td><span class="text-mono">${parseFloat(e.duration_seconds).toFixed(2)}</span></td>
+                <td><span class="badge badge-${e.alert_level === 'DANGER' ? 'danger' : 'warning'}">${e.alert_level}</span></td>
+                <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteEvent(${e.id})" title="Delete"><i class="fas fa-trash-can"></i></button></td>
+            </tr>
+        `).join('');
+    }
+    
+    function renderPagination() {
+        const container = document.getElementById('paginationContainer');
+        const totalPages = Math.ceil(filteredEvents.length / eventsPerPage);
+        if (totalPages <= 1) { container.innerHTML = ''; return; }
+        
+        let html = `<button class="pagination-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>`;
+        for (let i = 1; i <= totalPages; i++) {
+            if (totalPages > 7 && i > 3 && i < totalPages - 2 && Math.abs(i - currentPage) > 1) {
+                if (i === 4) html += `<span style="color:var(--text-muted);">...</span>`;
+                continue;
+            }
+            html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+        }
+        html += `<button class="pagination-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
+        container.innerHTML = html;
+    }
+    
+    function goToPage(page) {
+        const totalPages = Math.ceil(filteredEvents.length / eventsPerPage);
+        if (page < 1 || page > totalPages) return;
+        currentPage = page;
+        renderTable();
+        renderPagination();
+    }
+    
+    async function deleteEvent(id) {
+        if (!confirm('Delete this event permanently?')) return;
+        try {
+            await fetch(`/api/events/${id}`, { method: 'DELETE' });
+            allEvents = allEvents.filter(e => e.id !== id);
+            filterEvents();
+            showToast('Event deleted.', 'success');
+        } catch(e) {
+            showToast('Delete failed.', 'error');
+        }
+    }
+    
+    loadEvents();
+</script>
+{% endblock %}

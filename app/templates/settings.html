@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block navbar_title %}Settings{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-between align-center flex-wrap gap-2">
+    <div>
+        <h1><i class="fas fa-sliders" style="color: var(--accent-green); margin-right: 10px;"></i>System Configuration</h1>
+        <p>Configure detection thresholds, head pose parameters, camera feed, and audio alert behaviors.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline btn-sm" onclick="refreshSettings()" id="refreshBtn">
+            <i class="fas fa-rotate-right"></i> Refresh
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="triggerCalibration()" id="calibBtn">
+            <i class="fas fa-crosshairs"></i> Calibrate Seated Baseline
+        </button>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <!-- Detection Thresholds -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-eye"></i> Eye Closure & Blink Thresholds</div>
+        </div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label class="form-label">EAR Eye-Closed Threshold
+                    <span style="font-size:11px; color:var(--text-muted); font-weight:400; margin-left:6px;">Lower value = more closed eyes</span>
+                </label>
+                <input type="number" class="form-control" id="settingEarThreshold" value="0.24" step="0.01" min="0.10" max="0.40">
+                <small style="color: var(--text-muted); font-size: 11px;">Range 0.10–0.40. EAR below this triggers "eyes closed" (default: 0.24). Increase if missing closures; decrease if too many false alerts.</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Sustained Closure Duration (Seconds)</label>
+                <input type="number" class="form-control" id="settingEyeDuration" value="1.6" step="0.1" min="0.5" max="5.0">
+                <small style="color: var(--text-muted); font-size: 11px;">Time eyes must remain closed before alarm triggers. Time-based — reliable at any FPS (default: 1.6 s).</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Consecutive Frames Fallback
+                    <span style="font-size:11px; color:var(--text-muted); font-weight:400; margin-left:6px;">Used only when FPS is unknown</span>
+                </label>
+                <input type="number" class="form-control" id="settingConsecFrames" value="20" min="5" max="100">
+                <small style="color: var(--text-muted); font-size: 11px;">Frame-count fallback. At 20–30 FPS, 20 frames ≈ 0.7–1.0 s. Primary detection always uses time-based logic (default: 20).</small>
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Blink Detection EAR Threshold
+                    <span style="font-size:11px; color:var(--text-muted); font-weight:400; margin-left:6px;">Separate from closure alert</span>
+                </label>
+                <input type="number" class="form-control" id="settingBlinkThreshold" value="0.23" step="0.01" min="0.10" max="0.38">
+                <small style="color: var(--text-muted); font-size: 11px;">Quick dip below this counts as one blink. Must be lower than EAR threshold. Does not trigger alarm alone (default: 0.23).</small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Head Pose & Visibility Thresholds -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-person-falling"></i> Head Pose & Presence Monitoring</div>
+        </div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label class="form-label">Head Nod Pitch Drop (Degrees)</label>
+                <input type="number" class="form-control" id="settingPitchThreshold" value="16.0" step="1.0" min="8.0" max="35.0">
+                <small style="color: var(--text-muted); font-size: 11px;">Degrees tilted downward from calibrated seated baseline before head-down detection (default: 16°).</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Head-Down Sustained Duration (Seconds)</label>
+                <input type="number" class="form-control" id="settingHeadDuration" value="1.8" step="0.1" min="1.0" max="5.0">
+                <small style="color: var(--text-muted); font-size: 11px;">Duration before "Possible Drowsiness — Head Down" warning triggers (default: 1.8 s).</small>
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Face Missing Duration (Seconds)</label>
+                <input type="number" class="form-control" id="settingFaceMissingDuration" value="2.0" step="0.1" min="1.0" max="6.0">
+                <small style="color: var(--text-muted); font-size: 11px;">Time face is absent before "Driver Out of View" warning fires (separate from drowsiness alerts, default: 2.0 s).</small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Camera Settings -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-camera"></i> Camera Settings</div>
+            <button class="btn btn-outline btn-sm" onclick="discoverCameras()" id="discoverBtn">
+                <i class="fas fa-search"></i> Discover Cameras
+            </button>
+        </div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label class="form-label">Camera Source</label>
+                <select class="form-control" id="settingCamera">
+                    <option value="0">Camera 0 (Default — Loading...)</option>
+                </select>
+                <small style="color: var(--text-muted); font-size: 11px;" id="cameraDiscoverNote">Click "Discover Cameras" to probe available devices.</small>
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Resolution</label>
+                <select class="form-control" id="settingResolution">
+                    <option value="640x480" selected>640 × 480 (Standard / Balanced)</option>
+                    <option value="1280x720">1280 × 720 (HD — if camera supports it)</option>
+                    <option value="320x240">320 × 240 (Low Latency / High FPS)</option>
+                    <option value="960x540">960 × 540 (qHD Medium)</option>
+                </select>
+                <small style="color: var(--text-muted); font-size: 11px;">Applied to the capture object. If unsupported, the camera falls back to its closest available mode.</small>
+            </div>
+            <div style="margin-top: 14px;">
+                <button class="btn btn-outline btn-sm" onclick="testSelectedCamera()" id="testCamBtn">
+                    <i class="fas fa-camera-rotate"></i> Test Selected Camera
+                </button>
+                <span id="camTestResult" style="margin-left: 10px; font-size: 12px; color: var(--text-muted);"></span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Alarm & Sound Settings -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title"><i class="fas fa-volume-high"></i> Alarm & Audio Preferences</div>
+        </div>
+        <div class="panel-body">
+            <div class="d-flex align-center justify-between" style="margin-bottom: 18px;">
+                <span style="font-size: 13px; color: var(--text-secondary);">Enable Audio Alarm</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="settingAlarmEnabled" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Alarm Volume: <span id="volumeDisplay">80</span>%</label>
+                <input type="range" id="settingVolume" min="0" max="100" value="80" oninput="document.getElementById('volumeDisplay').textContent = this.value">
+            </div>
+            <div style="margin-top: 14px;">
+                <button class="btn btn-outline btn-sm" onclick="playTestAlarm()">
+                    <i class="fas fa-bell"></i> Test Alarm Sound
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Management -->
+<div class="panel" style="margin-top: 24px;">
+    <div class="panel-header">
+        <div class="panel-title"><i class="fas fa-database"></i> Data Management</div>
+    </div>
+    <div class="panel-body">
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+            <button class="btn btn-primary" onclick="exportCSV()">
+                <i class="fas fa-download"></i> Export All Data as CSV
+            </button>
+            <button class="btn btn-outline" onclick="exportPDF()">
+                <i class="fas fa-file-pdf"></i> Export Detection PDF Report
+            </button>
+            <button class="btn btn-danger" onclick="clearAllData()">
+                <i class="fas fa-trash-can"></i> Clear All Detection History
+            </button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px; margin-bottom: 0;">
+            Export downloads a file directly. Clear deletes all sessions, events, and blink logs permanently.
+        </p>
+    </div>
+</div>
+
+<!-- Save Button Bar -->
+<div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px;">
+    <button class="btn btn-outline btn-lg" onclick="resetSettings()"><i class="fas fa-rotate-left"></i> Reset Defaults</button>
+    <button class="btn btn-primary btn-lg" onclick="saveSettings()" id="saveBtn"><i class="fas fa-check"></i> Save Settings</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let audioCtx = null;
+
+    async function loadSettingsFromBackend() {
+        try {
+            const res = await fetch('/api/settings');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const s = await res.json();
+            if (s.ear_threshold !== undefined) document.getElementById('settingEarThreshold').value = s.ear_threshold;
+            if (s.eye_closure_duration !== undefined) document.getElementById('settingEyeDuration').value = s.eye_closure_duration;
+            if (s.consec_frames !== undefined) document.getElementById('settingConsecFrames').value = s.consec_frames;
+            if (s.blink_threshold !== undefined) document.getElementById('settingBlinkThreshold').value = s.blink_threshold;
+            if (s.pitch_threshold !== undefined) document.getElementById('settingPitchThreshold').value = s.pitch_threshold;
+            if (s.head_down_duration !== undefined) document.getElementById('settingHeadDuration').value = s.head_down_duration;
+            if (s.face_missing_duration !== undefined) document.getElementById('settingFaceMissingDuration').value = s.face_missing_duration;
+            if (s.camera_index !== undefined) document.getElementById('settingCamera').value = String(s.camera_index);
+            if (s.resolution !== undefined) document.getElementById('settingResolution').value = s.resolution;
+            if (s.alarm_enabled !== undefined) document.getElementById('settingAlarmEnabled').checked = s.alarm_enabled;
+            if (s.volume !== undefined) {
+                document.getElementById('settingVolume').value = s.volume;
+                document.getElementById('volumeDisplay').textContent = s.volume;
+            }
+        } catch(e) {
+            showToast('Could not load settings from server: ' + e.message, 'warning');
+        }
+    }
+
+    async function refreshSettings() {
+        const btn = document.getElementById('refreshBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+        await loadSettingsFromBackend();
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-rotate-right"></i> Refresh';
+        showToast('Settings reloaded from server.', 'info');
+    }
+
+    async function saveSettings() {
+        const ear = parseFloat(document.getElementById('settingEarThreshold').value);
+        const eyeDur = parseFloat(document.getElementById('settingEyeDuration').value);
+        const consecFrames = parseInt(document.getElementById('settingConsecFrames').value);
+        const blinkTh = parseFloat(document.getElementById('settingBlinkThreshold').value);
+        const pitch = parseFloat(document.getElementById('settingPitchThreshold').value);
+        const headDur = parseFloat(document.getElementById('settingHeadDuration').value);
+        const faceDur = parseFloat(document.getElementById('settingFaceMissingDuration').value);
+        const camIdx = parseInt(document.getElementById('settingCamera').value);
+        const resolution = document.getElementById('settingResolution').value;
+        const alarmEnabled = document.getElementById('settingAlarmEnabled').checked;
+        const volume = parseInt(document.getElementById('settingVolume').value);
+
+        // Validate
+        if (isNaN(ear) || ear < 0.10 || ear > 0.40) {
+            showToast('EAR threshold must be between 0.10 and 0.40', 'error'); return;
+        }
+        if (isNaN(eyeDur) || eyeDur < 0.5 || eyeDur > 5.0) {
+            showToast('Eye closure duration must be 0.5–5.0 seconds', 'error'); return;
+        }
+        if (isNaN(blinkTh) || blinkTh >= ear) {
+            showToast('Blink threshold must be lower than EAR threshold', 'error'); return;
+        }
+        if (isNaN(pitch) || pitch < 8.0 || pitch > 35.0) {
+            showToast('Head pitch threshold must be 8–35 degrees', 'error'); return;
+        }
+        if (isNaN(consecFrames) || consecFrames < 5 || consecFrames > 100) {
+            showToast('Consecutive frames must be 5–100', 'error'); return;
+        }
+
+        const settings = {
+            ear_threshold: ear,
+            eye_closure_duration: eyeDur,
+            consec_frames: consecFrames,
+            blink_threshold: blinkTh,
+            pitch_threshold: pitch,
+            head_down_duration: headDur,
+            face_missing_duration: faceDur,
+            camera_index: camIdx,
+            resolution,
+            alarm_enabled: alarmEnabled,
+            volume
+        };
+
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        try {
+            const res = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            const data = await res.json();
+            if (res.ok && data.status === 'success') {
+                showToast('Settings saved and applied to the live detection engine!', 'success');
+            } else {
+                showToast('Server rejected settings: ' + (data.error || 'unknown error'), 'error');
+            }
+        } catch(e) {
+            showToast('Network error saving settings: ' + e.message, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-check"></i> Save Settings';
+        }
+    }
+
+    async function discoverCameras() {
+        const btn = document.getElementById('discoverBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+        document.getElementById('cameraDiscoverNote').textContent = 'Probing camera devices (0–4)...';
+        try {
+            const res = await fetch('/api/cameras');
+            const data = await res.json();
+            const sel = document.getElementById('settingCamera');
+            const currentVal = sel.value;
+            sel.innerHTML = '';
+            (data.cameras || []).forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.index;
+                opt.textContent = `Camera ${c.index} — Available`;
+                sel.appendChild(opt);
+            });
+            // Restore selection if still present
+            if ([...sel.options].some(o => o.value === currentVal)) {
+                sel.value = currentVal;
+            }
+            const count = (data.cameras || []).length;
+            document.getElementById('cameraDiscoverNote').textContent = `Found ${count} accessible camera device(s).`;
+            showToast(`Discovered ${count} camera(s).`, 'success');
+        } catch(e) {
+            document.getElementById('cameraDiscoverNote').textContent = 'Discovery failed: ' + e.message;
+            showToast('Camera discovery failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-search"></i> Discover Cameras';
+        }
+    }
+
+    async function testSelectedCamera() {
+        const idx = parseInt(document.getElementById('settingCamera').value || '0');
+        const btn = document.getElementById('testCamBtn');
+        const resultEl = document.getElementById('camTestResult');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+        resultEl.textContent = '';
+        resultEl.style.color = 'var(--text-muted)';
+        try {
+            const res = await fetch('/api/test-camera', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera_index: idx })
+            });
+            const data = await res.json();
+            if (data.success) {
+                resultEl.textContent = `✓ OK — ${data.resolution}`;
+                resultEl.style.color = 'var(--accent-green)';
+                showToast(`Camera ${idx} test passed (${data.resolution}).`, 'success');
+            } else {
+                resultEl.textContent = `✗ Failed`;
+                resultEl.style.color = 'var(--accent-red)';
+                showToast(`Camera ${idx} test failed: ${data.message}`, 'error');
+            }
+        } catch(e) {
+            resultEl.textContent = '✗ Error';
+            resultEl.style.color = 'var(--accent-red)';
+            showToast('Camera test request failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-camera-rotate"></i> Test Selected Camera';
+        }
+    }
+
+    function playTestAlarm() {
+        const vol = (parseInt(document.getElementById('settingVolume').value) || 80) / 100;
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.4);
+            gain.gain.setValueAtTime(vol * 0.4, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.4);
+            showToast('Alarm test played successfully.', 'success');
+        } catch(e) {
+            showToast('Audio test error: ' + e.message, 'error');
+        }
+    }
+
+    async function triggerCalibration() {
+        const btn = document.getElementById('calibBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/calibrate', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'calibrating') {
+                showToast('Calibration active: Look straight ahead with open eyes for 1–2 seconds.', 'info', 6000);
+            } else {
+                showToast('Start the camera feed on the Live Detection page first to calibrate.', 'warning', 5000);
+            }
+        } catch(e) {
+            showToast('Calibration request failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function clearAllData() {
+        if (!confirm('Delete ALL detection data permanently?\n\nThis clears all events, blinks, and sessions.')) return;
+        try {
+            const res = await fetch('/api/data/clear', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'cleared') {
+                showToast('All detection records cleared successfully.', 'success');
+            } else {
+                showToast('Failed to clear records: ' + (data.error || 'unknown'), 'error');
+            }
+        } catch(e) {
+            showToast('Error clearing data: ' + e.message, 'error');
+        }
+    }
+
+    function resetSettings() {
+        if (!confirm('Reset all settings to defaults?')) return;
+        document.getElementById('settingEarThreshold').value = 0.24;
+        document.getElementById('settingEyeDuration').value = 1.6;
+        document.getElementById('settingConsecFrames').value = 20;
+        document.getElementById('settingBlinkThreshold').value = 0.23;
+        document.getElementById('settingPitchThreshold').value = 16.0;
+        document.getElementById('settingHeadDuration').value = 1.8;
+        document.getElementById('settingFaceMissingDuration').value = 2.0;
+        document.getElementById('settingCamera').value = '0';
+        document.getElementById('settingResolution').value = '640x480';
+        document.getElementById('settingAlarmEnabled').checked = true;
+        document.getElementById('settingVolume').value = 80;
+        document.getElementById('volumeDisplay').textContent = '80';
+        saveSettings();
+    }
+
+    loadSettingsFromBackend();
+</script>
+{% endblock %}
