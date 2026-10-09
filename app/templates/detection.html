@@ -28,7 +28,10 @@
         <h1><i class="fas fa-video" style="color: var(--accent-cyan); margin-right: 10px;"></i>Real-Time Driver Monitoring</h1>
         <p>Live camera stream with 3D facial landmark mesh, EAR eye closure timing, head-down tracking, and state management.</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 align-center">
+        <span id="audioBadge" class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); font-size: 12px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fas fa-volume-high"></i> Audio Alarm Ready
+        </span>
         <button class="btn btn-outline btn-sm" onclick="triggerLiveCalibration()" id="calibBtn">
             <i class="fas fa-crosshairs"></i> Calibrate Seated Baseline
         </button>
@@ -174,37 +177,42 @@
     let audioCtx = null;
     let lastAlertTime = 0;
     let lastAlarmSoundTime = 0;
-    const ALARM_COOLDOWN_MS = 1500;
+    const ALARM_COOLDOWN_MS = 800;
 
-    // ─── Web Audio Alarm (Multi-tone urgent siren) ───
+    // ─── Web Audio Alarm (High-Urgency Multi-Tone Siren + Audio File) ───
     let audioUnlocked = false;
-    let backupAlarmAudio = null;
 
-    // Pre-initialize AudioContext on first user interaction (required by browsers)
     function unlockAudio() {
-        if (audioUnlocked) return;
+        if (audioUnlocked && audioCtx && audioCtx.state === 'running') return;
         try {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            // Play a silent buffer to fully unlock
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            // Silent buffer unlock
             const buf = audioCtx.createBuffer(1, 1, 22050);
             const src = audioCtx.createBufferSource();
             src.buffer = buf;
             src.connect(audioCtx.destination);
             src.start(0);
             audioUnlocked = true;
-            console.log('[DrowsiGuard] Audio context unlocked');
-        } catch(e) { console.warn('Audio unlock failed:', e); }
+            console.log('[DrowsiGuard] Audio context unlocked and active');
 
-        // Also prepare HTML5 Audio fallback with the server alarm file
-        try {
-            backupAlarmAudio = new Audio('/static/audio/alarm.wav');
-            backupAlarmAudio.volume = 0.8;
-            backupAlarmAudio.load();
-        } catch(e) {}
+            const badge = document.getElementById('audioBadge');
+            if (badge) {
+                badge.innerHTML = '<i class="fas fa-volume-high"></i> Audio Alarm Armed';
+                badge.style.color = 'var(--accent-green)';
+            }
+        } catch(e) {
+            console.warn('Audio unlock warning:', e);
+        }
     }
-    document.addEventListener('click', unlockAudio, { once: false });
-    document.addEventListener('keydown', unlockAudio, { once: false });
+
+    // Attach unlock to all user gesture interactions
+    ['click', 'keydown', 'touchstart', 'pointerdown', 'mousedown'].forEach(ev => {
+        window.addEventListener(ev, unlockAudio, { passive: true });
+    });
+    window.addEventListener('load', unlockAudio);
 
     function playWebAlarm(forced = false) {
         if (!forced && !document.getElementById('alarmToggle').checked) return;
@@ -213,53 +221,57 @@
         lastAlarmSoundTime = now;
 
         const vol = (parseInt(document.getElementById('volumeSlider').value) || 80) / 100;
-        console.log('[DrowsiGuard] ALARM triggered, vol=' + vol);
+        console.log('[DrowsiGuard] 🚨 ALARM PLAYING! volume=' + vol);
 
-        // Method 1: Web Audio API — multi-tone urgent siren (1.2 seconds)
-        try {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-
-            const t = audioCtx.currentTime;
-            // Three descending urgent tones
-            const tones = [
-                { freq: 880, start: t, end: t + 0.35 },
-                { freq: 660, start: t + 0.35, end: t + 0.7 },
-                { freq: 880, start: t + 0.7, end: t + 1.2 }
-            ];
-
-            tones.forEach(tone => {
+        // 1. Synthesize High-Urgency Dual-Tone Siren via Web Audio API
+        const triggerOscillators = () => {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const t = audioCtx.currentTime;
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
+
                 osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(tone.freq, tone.start);
-                osc.frequency.exponentialRampToValueAtTime(tone.freq * 0.6, tone.end);
-                gain.gain.setValueAtTime(vol * 0.6, tone.start);
-                gain.gain.setValueAtTime(vol * 0.6, tone.end - 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.01, tone.end);
+                // Urgent European emergency tone pattern (880Hz <-> 1175Hz)
+                osc.frequency.setValueAtTime(880, t);
+                osc.frequency.linearRampToValueAtTime(1175, t + 0.18);
+                osc.frequency.linearRampToValueAtTime(880, t + 0.36);
+                osc.frequency.linearRampToValueAtTime(1175, t + 0.54);
+                osc.frequency.linearRampToValueAtTime(880, t + 0.72);
+
+                gain.gain.setValueAtTime(vol * 0.75, t);
+                gain.gain.setValueAtTime(vol * 0.75, t + 0.65);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                osc.start(tone.start);
-                osc.stop(tone.end);
-            });
-        } catch(e) {
-            console.warn('Web Audio alarm error:', e);
+                osc.start(t);
+                osc.stop(t + 0.75);
+            } catch(e) {
+                console.warn('Web Audio oscillator error:', e);
+            }
+        };
+
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().then(triggerOscillators).catch(triggerOscillators);
+        } else {
+            triggerOscillators();
         }
 
-        // Method 2: HTML5 Audio fallback (plays the alarm.wav file)
+        // 2. Play Alarm WAV Audio Element Fallback
         try {
-            if (backupAlarmAudio) {
-                backupAlarmAudio.currentTime = 0;
-                backupAlarmAudio.volume = Math.min(1.0, vol * 0.9);
-                backupAlarmAudio.play().catch(() => {});
-            }
+            const audioElem = new Audio('/static/audio/alarm.wav');
+            audioElem.volume = Math.min(1.0, vol);
+            audioElem.play().catch(e => {
+                // Audio element blocked if no interaction
+            });
         } catch(e) {}
     }
 
     function playTestAlarmManual() {
-        unlockAudio(); // Ensure audio is unlocked
+        unlockAudio();
         playWebAlarm(true);
-        showToast('Test alarm played.', 'info');
+        showToast('🔊 Alarm sound tested successfully!', 'info');
     }
 
     // ─── Start Detection ───
@@ -384,7 +396,7 @@
     // ─── Metrics Polling ───
     function startMetricsPolling() {
         if (metricsInterval) clearInterval(metricsInterval);
-        metricsInterval = setInterval(pollMetrics, 300);
+        metricsInterval = setInterval(pollMetrics, 200);
     }
 
     function stopMetricsPolling() {
@@ -427,19 +439,29 @@
             stateEl.textContent = state;
             stateEl.style.color = stateColors[state] || 'var(--text-muted)';
 
-            if (state === 'EYES_CLOSED') {
+            const isEyeClosedAlarm = state === 'EYES_CLOSED' || (m.is_drowsy && state !== 'HEAD_DOWN');
+            const isHeadDownAlarm = state === 'HEAD_DOWN';
+
+            if (isEyeClosedAlarm) {
                 statusEl.textContent = '🚨 DROWSINESS: EYES CLOSED';
                 statusEl.style.color = 'var(--accent-red)';
                 container.classList.remove('warning-alert-border');
                 container.classList.add('drowsy-alert-border');
-                showAlertBanner('🚨 ALERT: Eyes Closed — Possible Drowsiness', '#ef4444');
+                showAlertBanner('🚨 ALERT: Eyes Closed — Prolonged Inattention / Microsleep', '#ef4444');
                 playWebAlarm();
-            } else if (state === 'HEAD_DOWN') {
-                statusEl.textContent = '⚠️ DROWSINESS: HEAD DOWN';
-                statusEl.style.color = 'var(--accent-amber)';
-                container.classList.remove('drowsy-alert-border');
-                container.classList.add('warning-alert-border');
-                showAlertBanner('⚠️ WARNING: Head Down — Monitor Driver', '#f59e0b');
+            } else if (isHeadDownAlarm) {
+                const isHairSlump = (m.drowsy_reason && m.drowsy_reason.includes('HAIR')) || false;
+                statusEl.textContent = isHairSlump ? '🚨 DROWSINESS: HEAD SLUMPED (HAIR VISIBLE)' : '⚠️ DROWSINESS: HEAD DOWN';
+                statusEl.style.color = isHairSlump ? 'var(--accent-red)' : 'var(--accent-amber)';
+                if (isHairSlump) {
+                    container.classList.remove('warning-alert-border');
+                    container.classList.add('drowsy-alert-border');
+                    showAlertBanner('🚨 CRITICAL ALERT: Driver Head Slumped Down (Top of Head / Hair Visible)!', '#ef4444');
+                } else {
+                    container.classList.remove('drowsy-alert-border');
+                    container.classList.add('warning-alert-border');
+                    showAlertBanner('⚠️ WARNING: Driver Head Nodding Down', '#f59e0b');
+                }
                 playWebAlarm();
             } else if (state === 'FACE_MISSING') {
                 statusEl.textContent = '⚠️ DRIVER OUT OF VIEW';

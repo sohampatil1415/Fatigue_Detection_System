@@ -1,0 +1,9 @@
+flask
+opencv-python==5.0.0.93
+numpy==2.5.1
+pandas
+pygame
+werkzeug
+reportlab
+psutil
+mediapipe
