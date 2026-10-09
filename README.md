@@ -1,4 +1,4 @@
-# AI-Powered Driver Drowsiness Detection System
+# Fatigue_Detection_System
 
 ![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey.svg)
